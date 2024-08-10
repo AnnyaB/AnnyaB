@@ -1,6 +1,6 @@
 - 👋 Hi, I’m Riya, a Bsc Computer Science student 
 - 👀 Being a computer science newbie, I’m interested in exploring and learning programming concepts with practical implementations.
-- 🌱 Currently learning Python and R for diving into deep Machine Learning and Data Science concepts.
+- 🌱 I'm currently learning Python and R for diving into deep Machine Learning and Data Science concepts.
 - 💞️ I'm looking to collaborate on introductory AI/ML and Data Science based projects.
 - 📫 Reach me via riyabasak639@gmail.com
 - 😄 Pronouns: She/Her

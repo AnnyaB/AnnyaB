@@ -5,7 +5,7 @@
 - 📫 Reach me via riyabasak639@gmail.com
 - 😄 Pronouns: She/Her
 - ⚡ Fun fact: I'm keen to learn anything new and intriguing.
-- If you're interested in building/contributing to AI/ML based innovative projects, feel free to connect! 
+- If you're interested in building/contributing to AI/ML based innovative projects, you are welcome! 
 
 <!---
 AnnyaB/AnnyaB is a ✨ special ✨ repository because its `README.md` (this file) appears on your GitHub profile.

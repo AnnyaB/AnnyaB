@@ -4,7 +4,8 @@
 - 💞️ I'm looking to collaborate on introductory AI/ML and Data Science based projects.
 - 📫 Reach me via riyabasak639@gmail.com
 - 😄 Pronouns: She/Her
-- ⚡ Fun fact: I'm keen to learn anything new and intriguing. 
+- ⚡ Fun fact: I'm keen to learn anything new and intriguing.
+- If you're interested in building/contributing to AI/ML based innovative projects, feel free to connect!
 
 <!---
 AnnyaB/AnnyaB is a ✨ special ✨ repository because its `README.md` (this file) appears on your GitHub profile.

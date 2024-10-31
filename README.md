@@ -8,7 +8,8 @@
 - 😄 she/her
 - ⚡ From Cosmology to Fashion, normalizing Artificial Intelligence with spectacular vision 
 - 🪸 Here's a fundamental way to showcase algorithmic understanding by building games (beginner's friendly)
--
+
+
 - ## Pershonal Workshops
 
 - Cosmic Motions 

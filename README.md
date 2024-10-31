@@ -1,5 +1,5 @@
 
-## 🚀 About Me
+## 🐝 About Me
 - 👋 Hi, you can call me AB 
 - 👀 I try to shape ideas into facts. 
 - 🌱 I’m currently building CNN from scratch, a beginner in swift.

@@ -10,7 +10,7 @@
 - 🪸 Here's a fundamental way to showcase algorithmic understanding by building games (beginner's friendly)
 
 
-- ## 🔨 Personal Workshops
+## 🔨 Personal Workshops
 
 - Cosmic Motions 
 - Vegan Clothing 

@@ -15,4 +15,4 @@
 - Cosmic Motions 
 - Vegan Clothing 
 - CNN from scratch 
-- Personalised Algorithmic Fashion 
+- Personalised Algorithmic Fashion  

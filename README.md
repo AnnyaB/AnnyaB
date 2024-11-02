@@ -2,7 +2,7 @@
 ## 🐝 About Me
 - 👋 Hi, you can call me AB 
 - 👀 I try to shape ideas into facts. 
-- 🌱 I’m currently building CNN from scratch, a beginner in swift.
+- 🌱 I’m currently building CNN from scratch, beginner in swift, kotlin.
 - 🦚 Implementing java and python for game development (testing my knowledge of oops, data structures and algorithms) 
 - 📫 riyabasak639@gmail.com 
 - 😄 she/her

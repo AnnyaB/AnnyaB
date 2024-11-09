@@ -7,8 +7,7 @@
 - 📫 riyabasak639@gmail.com 
 - 😄 she/her
 - ⚡ From Cosmology to Fashion, normalizing Artificial Intelligence with spectacular vision 
-- 🪸 Here's a fundamental way to showcase algorithmic understanding by building games (beginner's friendly)
-
+- 🪸 Development of games can be an incredible way of showcasing algorithmic understanding and gaining hands-on experience of varoius data structures imo.
 
 ## 🔨 Personal Workshops
 

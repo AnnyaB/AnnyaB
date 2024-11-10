@@ -8,7 +8,7 @@
 - 😄 she/her
 - ⚡ From Cosmology to Fashion, normalizing Artificial Intelligence with spectacular vision 
 - 🪸 Development of games can be an incredible way of showcasing algorithmic understanding and gaining hands-on experience of implementing various data structures imo.
-- 🪷 Consistently figuring out the drawbacks to produce an impeccable model to be around! 
+- 🪷 Consistently figuring out the drawbacks to produce an impeccable product
 
 ## 🔨 Personal Workshops
 

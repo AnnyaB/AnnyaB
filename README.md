@@ -16,3 +16,4 @@
 - Vegan Clothing 
 - CNN from scratch 
 - Personalised Algorithmic Fashion  
+ 

@@ -18,8 +18,8 @@
 
 - 🧬 CNN from Scratch: Hands-on deep learning fundamentals
 
-- 👗 Personalized Algorithmic Fashion: Merging AI and personal style
-
+- 👗 👜 Personalized Algorithmic Fashion: Merging AI and personal style
+  
 ## 📫 Contact
 
 - 📧 Email: riyabasak639@gmail.com

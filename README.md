@@ -25,7 +25,7 @@
 - 📧 Email: riyabasak639@gmail.com
 
 ## 📍 Locations  
-
+  
 - Mumbai, London, New York, Los Angeles, Ontario. 
      
   

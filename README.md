@@ -26,7 +26,7 @@
 
 ## 📍 Locations          
      
-- Mumbai, London, New York, Los Angeles, Ontario.   
+- Mumbai, London, New York, Los Angeles, Ontario   
 
 ## µ Small Note: 
 

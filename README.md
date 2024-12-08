@@ -30,4 +30,4 @@
 
 ## µ Small Note: 
 
-- Computer Science Major with a strong interest in Physics 
+- Computer Science Major with a strong interest in Physics   

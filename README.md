@@ -28,6 +28,6 @@
      
 - Mumbai, London, New York, Los Angeles, Ontario   
 
-## µ : 
+## µ 
 
 - Computer Science Major with a strong interest in Physics    

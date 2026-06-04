@@ -5,6 +5,6 @@
 </p>
 
 <p align="center">
-  <i>Trying to teach a robot safe actions in the kitchen for now :)</i>
+  <i>Learning to teach a robot safe actions in the kitchen for now :)</i>
 </p>
 

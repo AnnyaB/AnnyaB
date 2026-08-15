@@ -1,4 +1,4 @@
-name: Generate contribution snake
+name: Generate full-history contribution snake
 
 on:
   schedule:
@@ -17,15 +17,398 @@ jobs:
     timeout-minutes: 10
 
     steps:
-      - name: Generate contribution snake SVGs
-        uses: Platane/snk/svg-only@v3
-        with:
-          github_user_name: AnnyaB
-          outputs: |
-            dist/github-contribution-grid-snake.svg
-            dist/github-contribution-grid-snake-dark.svg?palette=github-dark
+      - name: Generate 2024-2026 contribution snake SVGs
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_USER: AnnyaB
+          START_YEAR: "2024"
+          END_YEAR: "2026"
+        run: |
+          python - <<'PY'
+          import datetime as dt
+          import html
+          import os
+          import re
+          import urllib.request
+          from html.parser import HTMLParser
+          from pathlib import Path
+
+          USER = os.environ.get("GH_USER", "AnnyaB")
+          START_YEAR = int(os.environ.get("START_YEAR", "2024"))
+          END_YEAR = int(os.environ.get("END_YEAR", "2026"))
+          TODAY = dt.date.today()
+
+          class ContributionParser(HTMLParser):
+              def __init__(self):
+                  super().__init__()
+                  self.days = {}
+
+              def handle_starttag(self, tag, attrs):
+                  a = dict(attrs)
+                  date = a.get("data-date")
+                  if not date:
+                      return
+
+                  level = a.get("data-level")
+                  count = a.get("data-count")
+
+                  if level is None:
+                      classes = a.get("class", "")
+                      match = re.search(r"(?:Level|level)[-_ ]?([0-4])", classes)
+                      level = match.group(1) if match else "0"
+
+                  try:
+                      level_i = max(0, min(4, int(level)))
+                  except (TypeError, ValueError):
+                      level_i = 0
+
+                  try:
+                      count_i = max(0, int(count)) if count is not None else None
+                  except (TypeError, ValueError):
+                      count_i = None
+
+                  self.days[date] = {
+                      "date": date,
+                      "level": level_i,
+                      "count": count_i,
+                  }
+
+
+          def fetch_public_profile_year(year):
+              start = dt.date(year, 1, 1)
+              end = dt.date(year, 12, 31)
+
+              if year == TODAY.year:
+                  end = min(end, TODAY)
+              elif year > TODAY.year:
+                  return []
+
+              url = (
+                  f"https://github.com/users/{USER}/contributions"
+                  f"?from={start.isoformat()}&to={end.isoformat()}"
+              )
+
+              request = urllib.request.Request(
+                  url,
+                  headers={
+                      "User-Agent": (
+                          "Mozilla/5.0 "
+                          f"{USER}-full-history-contribution-snake"
+                      ),
+                      "Accept": "text/html,application/xhtml+xml",
+                  },
+              )
+
+              with urllib.request.urlopen(request, timeout=30) as response:
+                  page = response.read().decode("utf-8", "replace")
+
+              parser = ContributionParser()
+              parser.feed(page)
+
+              days = [
+                  value
+                  for date, value in parser.days.items()
+                  if date.startswith(f"{year}-")
+              ]
+
+              # GitHub has used more than one contribution-grid markup over time.
+              # Fallback patterns keep this workflow resilient if the exact element
+              # type changes while data-date/data-level remain present.
+              if not days:
+                  for tag in re.findall(r"<[^>]+data-date=[\"'][^\"']+[\"'][^>]*>", page):
+                      date_match = re.search(
+                          r"data-date=[\"'](\d{4}-\d{2}-\d{2})[\"']",
+                          tag,
+                      )
+                      if not date_match:
+                          continue
+
+                      date = date_match.group(1)
+                      if not date.startswith(f"{year}-"):
+                          continue
+
+                      level_match = re.search(
+                          r"data-level=[\"']([0-4])[\"']",
+                          tag,
+                      )
+                      level = int(level_match.group(1)) if level_match else 0
+
+                      parser.days[date] = {
+                          "date": date,
+                          "level": level,
+                          "count": None,
+                      }
+
+                  days = [
+                      value
+                      for date, value in parser.days.items()
+                      if date.startswith(f"{year}-")
+                  ]
+
+              expected_min = 300 if year < TODAY.year else max(
+                  1, (end - start).days + 1
+              )
+
+              if len(days) < min(expected_min, 300):
+                  raise RuntimeError(
+                      f"Only parsed {len(days)} contribution days for {year}; "
+                      "GitHub contribution markup may have changed."
+                  )
+
+              return sorted(days, key=lambda item: item["date"])
+
+
+          def all_dates_for_year(year):
+              start = dt.date(year, 1, 1)
+              end = dt.date(year, 12, 31)
+
+              if year == TODAY.year:
+                  end = min(end, TODAY)
+              elif year > TODAY.year:
+                  return []
+
+              result = []
+              current = start
+              while current <= end:
+                  result.append(current)
+                  current += dt.timedelta(days=1)
+              return result
+
+
+          years = {}
+
+          for year in range(START_YEAR, END_YEAR + 1):
+              print(f"Fetching public profile contribution graph for {year}...")
+              fetched = fetch_public_profile_year(year)
+              fetched_by_date = {item["date"]: item for item in fetched}
+
+              complete = []
+              for day in all_dates_for_year(year):
+                  key = day.isoformat()
+                  complete.append(
+                      fetched_by_date.get(
+                          key,
+                          {"date": key, "level": 0, "count": None},
+                      )
+                  )
+
+              years[year] = complete
+              active_days = sum(day["level"] > 0 for day in complete)
+              print(
+                  f"{year}: {len(complete)} calendar days, "
+                  f"{active_days} contribution days."
+              )
+
+
+          CELL = 10
+          GAP = 3
+          PITCH = CELL + GAP
+          LEFT = 58
+          TOP = 26
+          YEAR_GAP = 34
+          GRID_HEIGHT = 7 * PITCH
+          ROW_HEIGHT = GRID_HEIGHT + YEAR_GAP
+          MAX_WEEKS = 54
+          WIDTH = LEFT + MAX_WEEKS * PITCH + 16
+          HEIGHT = TOP + len(years) * ROW_HEIGHT + 8
+          DURATION = 24.0
+
+
+          def github_weekday(date_obj):
+              # Python Monday=0..Sunday=6; GitHub Sunday=0..Saturday=6.
+              return (date_obj.weekday() + 1) % 7
+
+
+          def layout_year(year, days, row):
+              jan1 = dt.date(year, 1, 1)
+              grid_start = jan1 - dt.timedelta(days=github_weekday(jan1))
+              y0 = TOP + row * ROW_HEIGHT
+
+              cells = []
+              weeks = {}
+
+              for item in days:
+                  date_obj = dt.date.fromisoformat(item["date"])
+                  week = (date_obj - grid_start).days // 7
+                  weekday = github_weekday(date_obj)
+
+                  cell = {
+                      **item,
+                      "week": week,
+                      "weekday": weekday,
+                      "x": LEFT + week * PITCH,
+                      "y": y0 + weekday * PITCH,
+                  }
+                  cells.append(cell)
+                  weeks.setdefault(week, []).append(cell)
+
+              # Serpentine route across the exact year grid.
+              route = []
+              for week in sorted(weeks):
+                  column = sorted(weeks[week], key=lambda cell: cell["weekday"])
+                  if week % 2:
+                      column.reverse()
+                  route.extend(column)
+
+              return y0, cells, route
+
+
+          layouts = {}
+          route_cells = []
+
+          for row, (year, days) in enumerate(years.items()):
+              y0, cells, route = layout_year(year, days, row)
+              layouts[year] = (y0, cells)
+              route_cells.extend(route)
+
+
+          if not route_cells:
+              raise RuntimeError("No contribution calendar cells were generated.")
+
+
+          points = [
+              (cell["x"] + CELL / 2, cell["y"] + CELL / 2)
+              for cell in route_cells
+          ]
+
+          path_d = "M " + " L ".join(
+              f"{x:.1f},{y:.1f}" for x, y in points
+          )
+
+          route_index = {
+              cell["date"]: index
+              for index, cell in enumerate(route_cells)
+          }
+
+          total_route = max(1, len(route_cells) - 1)
+
+
+          def render(theme):
+              if theme == "dark":
+                  dot_colors = [
+                      "#161b22",
+                      "#0e4429",
+                      "#006d32",
+                      "#26a641",
+                      "#39d353",
+                  ]
+                  text_color = "#8b949e"
+                  snake_color = "#a371f7"
+                  eye_color = "#0d1117"
+              else:
+                  dot_colors = [
+                      "#ebedf0",
+                      "#9be9a8",
+                      "#40c463",
+                      "#30a14e",
+                      "#216e39",
+                  ]
+                  text_color = "#57606a"
+                  snake_color = "#8250df"
+                  eye_color = "#ffffff"
+
+              out = [
+                  (
+                      f'<svg xmlns="http://www.w3.org/2000/svg" '
+                      f'xmlns:xlink="http://www.w3.org/1999/xlink" '
+                      f'width="{WIDTH}" height="{HEIGHT}" '
+                      f'viewBox="0 0 {WIDTH} {HEIGHT}" '
+                      f'role="img" '
+                      f'aria-label="{html.escape(USER)} GitHub contributions '
+                      f'from {START_YEAR} to {END_YEAR}">'
+                  ),
+                  (
+                      f"<title>{html.escape(USER)} GitHub contribution snake, "
+                      f"{START_YEAR}-{END_YEAR}</title>"
+                  ),
+                  (
+                      "<style>"
+                      "text{font-family:-apple-system,BlinkMacSystemFont,"
+                      "'Segoe UI',sans-serif;font-size:14px;font-weight:600}"
+                      "</style>"
+                  ),
+              ]
+
+              for year, (y0, cells) in layouts.items():
+                  out.append(
+                      f'<text x="0" y="{y0 + 8}" fill="{text_color}" '
+                      f'dominant-baseline="middle">{year}</text>'
+                  )
+
+                  for cell in cells:
+                      level = max(0, min(4, int(cell["level"])))
+                      color = dot_colors[level]
+                      out.append(
+                          f'<rect x="{cell["x"]}" y="{cell["y"]}" '
+                          f'width="{CELL}" height="{CELL}" rx="2" '
+                          f'fill="{color}">'
+                      )
+
+                      # Contribution squares disappear briefly when the snake
+                      # reaches them, giving the same "eating" effect.
+                      if level > 0:
+                          index = route_index[cell["date"]]
+                          eat = 0.025 + 0.91 * (index / total_route)
+                          gone = min(eat + 0.010, 0.95)
+                          out.append(
+                              f'<animate attributeName="opacity" '
+                              f'values="1;1;0;0;1" '
+                              f'keyTimes="0;{eat:.6f};{gone:.6f};0.965;1" '
+                              f'dur="{DURATION}s" repeatCount="indefinite"/>'
+                          )
+
+                      out.append("</rect>")
+
+              out.append(
+                  f'<path id="snake-route" d="{path_d}" '
+                  f'fill="none" stroke="none"/>'
+              )
+
+              # Tail segments.
+              for tail in range(8, 0, -1):
+                  opacity = 0.34 + (8 - tail) * 0.065
+                  out.append(
+                      f'<circle r="4.1" fill="{snake_color}" '
+                      f'opacity="{opacity:.3f}">'
+                      f'<animateMotion dur="{DURATION}s" '
+                      f'repeatCount="indefinite" '
+                      f'begin="-{tail * 0.034:.3f}s" rotate="auto">'
+                      '<mpath href="#snake-route" xlink:href="#snake-route"/>'
+                      '</animateMotion></circle>'
+                  )
+
+              # Head + eyes.
+              out.append(
+                  f'<g><circle r="5.2" fill="{snake_color}"/>'
+                  f'<circle cx="1.7" cy="-1.7" r="0.85" fill="{eye_color}"/>'
+                  f'<circle cx="1.7" cy="1.7" r="0.85" fill="{eye_color}"/>'
+                  f'<animateMotion dur="{DURATION}s" '
+                  f'repeatCount="indefinite" rotate="auto">'
+                  '<mpath href="#snake-route" xlink:href="#snake-route"/>'
+                  '</animateMotion></g>'
+              )
+
+              out.append("</svg>")
+              return "".join(out)
+
+
+          Path("dist").mkdir(exist_ok=True)
+
+          # Preserve the filenames already referenced by README.md, so the
+          # README itself does not need to be changed.
+          Path("dist/github-contribution-grid-snake.svg").write_text(
+              render("light"),
+              encoding="utf-8",
+          )
+          Path("dist/github-contribution-grid-snake-dark.svg").write_text(
+              render("dark"),
+              encoding="utf-8",
+          )
+
+          print(
+              f"Generated full-history contribution snake for "
+              f"{START_YEAR}-{END_YEAR}."
+          )
+          PY
 
       - name: Publish SVGs to output branch
         uses: crazy-max/ghaction-github-pages@v3.1.0

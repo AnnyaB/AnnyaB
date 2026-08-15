@@ -111,7 +111,10 @@ jobs:
               ]
 
               if not days:
-                  for tag in re.findall(r"<[^>]+data-date=[\"'][^\"']+[\"'][^>]*>", page):
+                  for tag in re.findall(
+                      r"<[^>]+data-date=[\"'][^\"']+[\"'][^>]*>",
+                      page,
+                  ):
                       date_match = re.search(
                           r"data-date=[\"'](\d{4}-\d{2}-\d{2})[\"']",
                           tag,
@@ -196,26 +199,24 @@ jobs:
               )
 
 
-          CELL = 10
-          GAP = 3
-          PITCH = CELL + GAP
-          LEFT = 58
-          TOP = 26
-          YEAR_GAP = 34
+          # Match the original Platane/snk geometry closely.
+          PITCH = 16
+          DOT = 12
+          LEFT = 48
+          TOP = 32
           GRID_HEIGHT = 7 * PITCH
+          YEAR_GAP = 32
           ROW_HEIGHT = GRID_HEIGHT + YEAR_GAP
           MAX_WEEKS = 54
           WIDTH = LEFT + MAX_WEEKS * PITCH + 16
           HEIGHT = TOP + len(years) * ROW_HEIGHT + 8
 
-          # Keep approximately the same per-cell pace as the original snk
-          # animation instead of forcing three years into one short loop.
-          STEP_SECONDS = 0.10
-          SNAKE_PARTS = 8
+          # Original snk is around 0.10 s per movement step.
+          # Slightly slower keeps the three-year animation calm/readable.
+          STEP_SECONDS = 0.12
 
 
           def github_weekday(date_obj):
-              # Python Monday=0..Sunday=6; GitHub Sunday=0..Saturday=6.
               return (date_obj.weekday() + 1) % 7
 
 
@@ -225,85 +226,161 @@ jobs:
               y0 = TOP + row * ROW_HEIGHT
 
               cells = []
-              weeks = {}
-
               for item in days:
                   date_obj = dt.date.fromisoformat(item["date"])
                   week = (date_obj - grid_start).days // 7
                   weekday = github_weekday(date_obj)
 
-                  cell = {
-                      **item,
-                      "week": week,
-                      "weekday": weekday,
-                      "x": LEFT + week * PITCH,
-                      "y": y0 + weekday * PITCH,
-                  }
-                  cells.append(cell)
-                  weeks.setdefault(week, []).append(cell)
+                  cells.append(
+                      {
+                          **item,
+                          "week": week,
+                          "weekday": weekday,
+                          "px": LEFT + week * PITCH,
+                          "py": y0 + weekday * PITCH,
+                          "x": LEFT + week * PITCH + 2,
+                          "y": y0 + weekday * PITCH + 2,
+                      }
+                  )
 
-              # Visit every single calendar cell exactly once in a continuous
-              # serpentine route. Adjacent cells stay one grid-step apart.
-              route = []
-              for week in sorted(weeks):
-                  column = sorted(weeks[week], key=lambda cell: cell["weekday"])
-                  if week % 2:
-                      column.reverse()
-                  route.extend(column)
-
-              return y0, cells, route
+              return y0, cells
 
 
           layouts = {}
-          route_cells = []
+          active_by_year = {}
 
           for row, (year, days) in enumerate(years.items()):
-              y0, cells, route = layout_year(year, days, row)
+              y0, cells = layout_year(year, days, row)
               layouts[year] = (y0, cells)
-              route_cells.extend(route)
 
-          if not route_cells:
-              raise RuntimeError("No contribution calendar cells were generated.")
+              active = [cell for cell in cells if int(cell["level"]) > 0]
+              active.sort(
+                  key=lambda cell: (
+                      cell["week"],
+                      cell["weekday"]
+                      if cell["week"] % 2 == 0
+                      else -cell["weekday"],
+                  )
+              )
+              active_by_year[year] = active
 
-          # Every point is the exact centre of one calendar square. The SVG
-          # animation below uses discrete keyframes, so the snake visibly lands
-          # on every cell rather than interpolating rapidly past them.
-          points = [
-              (cell["x"] + CELL / 2, cell["y"] + CELL / 2)
-              for cell in route_cells
+
+          def walk_to(route, destination):
+              if not route:
+                  route.append(destination)
+                  return
+
+              x, y = route[-1]
+              dx, dy = destination
+
+              while x != dx:
+                  x += PITCH if dx > x else -PITCH
+                  route.append((x, y))
+
+              while y != dy:
+                  y += PITCH if dy > y else -PITCH
+                  route.append((x, y))
+
+
+          route = []
+          first_y0 = layouts[START_YEAR][0]
+          start_point = (LEFT - PITCH, first_y0 - PITCH)
+          route.append(start_point)
+
+          first_visit = {}
+
+          for year in range(START_YEAR, END_YEAR + 1):
+              y0, _ = layouts[year]
+              year_entry = (LEFT - PITCH, y0 - PITCH)
+              walk_to(route, year_entry)
+
+              active_positions = {
+                  (cell["px"], cell["py"]): cell
+                  for cell in active_by_year[year]
+              }
+
+              for target in active_by_year[year]:
+                  target_point = (target["px"], target["py"])
+                  before = len(route)
+                  walk_to(route, target_point)
+
+                  for idx in range(before, len(route)):
+                      pos = route[idx]
+                      if pos in active_positions:
+                          date = active_positions[pos]["date"]
+                          first_visit.setdefault(date, idx)
+
+              walk_to(route, (LEFT - PITCH, y0 + GRID_HEIGHT))
+
+          for year in range(START_YEAR, END_YEAR + 1):
+              for cell in active_by_year[year]:
+                  if cell["date"] not in first_visit:
+                      walk_to(route, (cell["px"], cell["py"]))
+                      first_visit[cell["date"]] = len(route) - 1
+
+          last_y = route[-1][1]
+          walk_to(route, (LEFT - PITCH, last_y))
+          walk_to(route, start_point)
+
+          compact_route = [route[0]]
+          for point in route[1:]:
+              if point != compact_route[-1]:
+                  compact_route.append(point)
+          route = compact_route
+
+          position_to_dates = {}
+          for year in range(START_YEAR, END_YEAR + 1):
+              for cell in active_by_year[year]:
+                  position_to_dates.setdefault(
+                      (cell["px"], cell["py"]),
+                      [],
+                  ).append(cell["date"])
+
+          first_visit = {}
+          for index, point in enumerate(route):
+              for date in position_to_dates.get(point, []):
+                  first_visit.setdefault(date, index)
+
+          missing = [
+              date
+              for dates in position_to_dates.values()
+              for date in dates
+              if date not in first_visit
           ]
-
-          route_index = {
-              cell["date"]: index
-              for index, cell in enumerate(route_cells)
-          }
-
-          total_steps = len(points)
-          DURATION = total_steps * STEP_SECONDS
-
-
-          def animation_values(offset):
-              values = []
-              for i in range(total_steps):
-                  source = max(0, i - offset)
-                  x, y = points[source]
-                  values.append(f"{x:.1f} {y:.1f}")
-              # Close the animation cleanly at the end of the loop.
-              values.append(values[-1])
-              return ";".join(values)
-
-
-          def animation_key_times():
-              # One keyframe per cell, giving equal time to every grid square.
-              if total_steps <= 1:
-                  return "0;1"
-              return ";".join(
-                  f"{i / total_steps:.7f}"
-                  for i in range(total_steps + 1)
+          if missing:
+              raise RuntimeError(
+                  f"Snake route missed {len(missing)} contribution cells."
               )
 
+          total_steps = len(route)
+          duration_ms = int(total_steps * STEP_SECONDS * 1000)
 
-          KEY_TIMES = animation_key_times()
+
+          # Exact four-piece proportions from the original working snk SVG.
+          SNAKE_SPECS = [
+              (0.8, 14.4, 4.5),
+              (1.8, 12.3, 4.1),
+              (2.6, 10.8, 3.6),
+              (3.0, 9.9, 3.3),
+          ]
+
+
+          def pct(index):
+              return 100.0 * index / max(1, total_steps - 1)
+
+
+          def snake_keyframes(part_index):
+              pieces = []
+              n = len(route)
+
+              for i in range(n):
+                  x, y = route[(i - part_index) % n]
+                  pieces.append(
+                      f"{pct(i):.3f}%"
+                      f"{{transform:translate({x}px,{y}px)}}"
+                  )
+
+              return "".join(pieces)
 
 
           def render(theme):
@@ -315,8 +392,8 @@ jobs:
                       "#0f6d31",
                       "#00c647",
                   ]
+                  empty = "#161b22"
                   text_color = "#8b949e"
-                  snake_color = "purple"
               else:
                   dot_colors = [
                       "#ebedf0",
@@ -325,14 +402,72 @@ jobs:
                       "#30a14e",
                       "#216e39",
                   ]
+                  empty = "#ebedf0"
                   text_color = "#57606a"
-                  snake_color = "purple"
+
+              styles = [
+                  ":root{",
+                  "--cb:#1b1f230a;",
+                  "--cs:purple;",
+                  f"--ce:{empty};",
+                  *[
+                      f"--c{i}:{color};"
+                      for i, color in enumerate(dot_colors)
+                  ],
+                  "}",
+                  (
+                      f".c{{shape-rendering:geometricPrecision;"
+                      f"fill:var(--ce);stroke-width:1px;stroke:var(--cb);"
+                      f"width:{DOT}px;height:{DOT}px}}"
+                  ),
+                  (
+                      f".s{{shape-rendering:geometricPrecision;"
+                      f"fill:var(--cs);animation:none linear "
+                      f"{duration_ms}ms infinite}}"
+                  ),
+              ]
+
+              cell_class = {}
+              class_index = 0
+
+              for year in range(START_YEAR, END_YEAR + 1):
+                  _, cells = layouts[year]
+                  for cell in cells:
+                      level = max(0, min(4, int(cell["level"])))
+                      if level <= 0:
+                          continue
+
+                      visit = first_visit[cell["date"]]
+                      t = pct(visit)
+                      before = max(0.0, t - 0.015)
+                      after = min(100.0, t + 0.015)
+                      class_name = f"c{class_index:x}"
+                      class_index += 1
+                      cell_class[cell["date"]] = class_name
+
+                      styles.append(
+                          f"@keyframes {class_name}{{"
+                          f"{before:.3f}%{{fill:var(--c{level})}}"
+                          f"{after:.3f}%,100%{{fill:var(--ce)}}"
+                          f"}}"
+                          f".c.{class_name}{{"
+                          f"fill:var(--c{level});"
+                          f"animation:{class_name} "
+                          f"{duration_ms}ms linear infinite"
+                          f"}}"
+                      )
+
+              for part in range(len(SNAKE_SPECS)):
+                  styles.append(
+                      f"@keyframes s{part}{{{snake_keyframes(part)}}}"
+                      f".s.s{part}{{animation-name:s{part}}}"
+                  )
 
               out = [
                   (
-                      f'<svg xmlns="http://www.w3.org/2000/svg" '
+                      f'<svg viewBox="0 0 {WIDTH} {HEIGHT}" '
                       f'width="{WIDTH}" height="{HEIGHT}" '
-                      f'viewBox="0 0 {WIDTH} {HEIGHT}" '
+                      f'xmlns="http://www.w3.org/2000/svg" '
                       f'role="img" '
                       f'aria-label="{html.escape(USER)} GitHub contributions '
                       f'from {START_YEAR} to {END_YEAR}">'
@@ -341,68 +476,43 @@ jobs:
                       f"<title>{html.escape(USER)} GitHub contribution snake, "
                       f"{START_YEAR}-{END_YEAR}</title>"
                   ),
+                  "<desc>Full-history contribution snake styled after Platane/snk</desc>",
+                  "<style>",
+                  "".join(styles),
                   (
-                      "<style>"
                       "text{font-family:-apple-system,BlinkMacSystemFont,"
                       "'Segoe UI',sans-serif;font-size:14px;font-weight:600}"
-                      ".snake{shape-rendering:geometricPrecision}"
-                      "</style>"
                   ),
+                  "</style>",
               ]
 
-              for year, (y0, cells) in layouts.items():
+              for year in range(START_YEAR, END_YEAR + 1):
+                  y0, cells = layouts[year]
                   out.append(
                       f'<text x="0" y="{y0 + 8}" fill="{text_color}" '
                       f'dominant-baseline="middle">{year}</text>'
                   )
 
                   for cell in cells:
-                      level = max(0, min(4, int(cell["level"])))
-                      color = dot_colors[level]
+                      klass = "c"
+                      if cell["date"] in cell_class:
+                          klass += " " + cell_class[cell["date"]]
+
                       out.append(
-                          f'<rect x="{cell["x"]}" y="{cell["y"]}" '
-                          f'width="{CELL}" height="{CELL}" rx="2" '
-                          f'fill="{color}">'
+                          f'<rect class="{klass}" '
+                          f'x="{cell["x"]}" y="{cell["y"]}" '
+                          f'rx="2" ry="2"/>'
                       )
 
-                      if level > 0:
-                          index = route_index[cell["date"]]
-                          eat = index * STEP_SECONDS
-                          # Leave the square eaten long enough to be noticeable,
-                          # then restore it before the next full loop.
-                          out.append(
-                              f'<animate attributeName="opacity" '
-                              f'values="1;1;0;0;1" '
-                              f'keyTimes="0;{max(0.0, eat / DURATION - 0.00001):.7f};'
-                              f'{eat / DURATION:.7f};0.9850000;1" '
-                              f'dur="{DURATION:.2f}s" repeatCount="indefinite"/>'
-                          )
-
-                      out.append("</rect>")
-
-              # Rounded, tapered pixel body closely matches the friendly look
-              # of Platane/snk: a large rounded head with progressively smaller
-              # rounded body pieces, rather than a chain of identical circles.
-              sizes = [9.2, 8.8, 8.2, 7.5, 6.8, 6.2, 5.7, 5.2]
-
-              for part in range(SNAKE_PARTS - 1, -1, -1):
-                  size = sizes[part]
-                  x0 = -size / 2
-                  y0 = -size / 2
-                  radius = min(4.5, size * 0.42)
-                  values = animation_values(part)
-
+              for part, (offset, size, radius) in enumerate(SNAKE_SPECS):
+                  initial_x, initial_y = route[(-part) % len(route)]
                   out.append(
-                      f'<rect class="snake" x="{x0:.2f}" y="{y0:.2f}" '
-                      f'width="{size:.2f}" height="{size:.2f}" '
-                      f'rx="{radius:.2f}" ry="{radius:.2f}" '
-                      f'fill="{snake_color}">'
-                      f'<animateTransform attributeName="transform" '
-                      f'attributeType="XML" type="translate" '
-                      f'values="{values}" keyTimes="{KEY_TIMES}" '
-                      f'calcMode="discrete" dur="{DURATION:.2f}s" '
-                      f'repeatCount="indefinite"/>'
-                      '</rect>'
+                      f'<rect class="s s{part}" '
+                      f'x="{offset}" y="{offset}" '
+                      f'width="{size}" height="{size}" '
+                      f'rx="{radius}" ry="{radius}" '
+                      f'style="transform:translate('
+                      f'{initial_x}px,{initial_y}px)"/>'
                   )
 
               out.append("</svg>")
@@ -411,8 +521,6 @@ jobs:
 
           Path("dist").mkdir(exist_ok=True)
 
-          # Preserve the filenames already referenced by README.md so nothing
-          # outside this workflow needs to change.
           Path("dist/github-contribution-grid-snake.svg").write_text(
               render("light"),
               encoding="utf-8",
@@ -422,10 +530,13 @@ jobs:
               encoding="utf-8",
           )
 
+          active_total = sum(len(v) for v in active_by_year.values())
           print(
-              f"Generated full-history contribution snake for "
-              f"{START_YEAR}-{END_YEAR}: {total_steps} visited cells, "
-              f"{DURATION:.1f}s per loop ({STEP_SECONDS:.2f}s per cell)."
+              f"Generated original-style 4-part snake for "
+              f"{START_YEAR}-{END_YEAR}: "
+              f"{active_total} contribution cells covered, "
+              f"{total_steps} adjacent movement steps, "
+              f"{duration_ms / 1000:.1f}s per loop."
           )
           PY
 

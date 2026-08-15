@@ -199,7 +199,7 @@ jobs:
               )
 
 
-          # Match the original Platane/snk geometry closely.
+          # Match the original Platane/snk grid geometry closely.
           PITCH = 16
           DOT = 12
           LEFT = 48
@@ -211,8 +211,7 @@ jobs:
           WIDTH = LEFT + MAX_WEEKS * PITCH + 16
           HEIGHT = TOP + len(years) * ROW_HEIGHT + 8
 
-          # Original snk is around 0.10 s per movement step.
-          # Slightly slower keeps the three-year animation calm/readable.
+          # Keep the same calm motion speed as the working version.
           STEP_SECONDS = 0.12
 
 
@@ -349,35 +348,49 @@ jobs:
           ]
           if missing:
               raise RuntimeError(
-                  f"Snake route missed {len(missing)} contribution cells."
+                  f"Bunny route missed {len(missing)} contribution cells."
               )
 
           total_steps = len(route)
           duration_ms = int(total_steps * STEP_SECONDS * 1000)
 
 
-          # Exact four-piece proportions from the original working snk SVG.
-          SNAKE_SPECS = [
-              (0.8, 14.4, 4.5),
-              (1.8, 12.3, 4.1),
-              (2.6, 10.8, 3.6),
-              (3.0, 9.9, 3.3),
-          ]
-
-
           def pct(index):
               return 100.0 * index / max(1, total_steps - 1)
 
 
-          def snake_keyframes(part_index):
-              pieces = []
+          def direction_angle(index):
+              x, y = route[index]
               n = len(route)
 
-              for i in range(n):
-                  x, y = route[(i - part_index) % n]
+              for offset in range(1, n + 1):
+                  nx, ny = route[(index + offset) % n]
+                  dx = nx - x
+                  dy = ny - y
+
+                  if dx > 0:
+                      return 0
+                  if dx < 0:
+                      return 180
+                  if dy > 0:
+                      return 90
+                  if dy < 0:
+                      return -90
+
+              return 0
+
+
+          def bunny_keyframes():
+              pieces = []
+
+              for i, (x, y) in enumerate(route):
+                  angle = direction_angle(i)
+                  cx = x + PITCH / 2
+                  cy = y + PITCH / 2
                   pieces.append(
                       f"{pct(i):.3f}%"
-                      f"{{transform:translate({x}px,{y}px)}}"
+                      f"{{transform:translate({cx:.1f}px,{cy:.1f}px) "
+                      f"rotate({angle}deg)}}"
                   )
 
               return "".join(pieces)
@@ -394,6 +407,7 @@ jobs:
                   ]
                   empty = "#161b22"
                   text_color = "#8b949e"
+                  eye_pupil = "#1f1028"
               else:
                   dot_colors = [
                       "#ebedf0",
@@ -404,11 +418,16 @@ jobs:
                   ]
                   empty = "#ebedf0"
                   text_color = "#57606a"
+                  eye_pupil = "#2b1735"
 
               styles = [
                   ":root{",
                   "--cb:#1b1f230a;",
                   "--cs:purple;",
+                  "--ear:#ffb6dc;",
+                  "--cheek:#ff8fc7;",
+                  "--eye:#ffffff;",
+                  f"--pupil:{eye_pupil};",
                   f"--ce:{empty};",
                   *[
                       f"--c{i}:{color};"
@@ -421,10 +440,20 @@ jobs:
                       f"width:{DOT}px;height:{DOT}px}}"
                   ),
                   (
-                      f".s{{shape-rendering:geometricPrecision;"
-                      f"fill:var(--cs);animation:none linear "
-                      f"{duration_ms}ms infinite}}"
+                      f".bunny{{shape-rendering:geometricPrecision;"
+                      f"animation:bunnyMove {duration_ms}ms linear infinite;"
+                      f"transform-origin:0 0}}"
                   ),
+                  (
+                      ".mouth{transform-origin:1px 0px;"
+                      "animation:chomp 360ms ease-in-out infinite}"
+                  ),
+                  (
+                      "@keyframes chomp{"
+                      "0%,100%{transform:scaleY(.28)}"
+                      "50%{transform:scaleY(1)}}"
+                  ),
+                  f"@keyframes bunnyMove{{{bunny_keyframes()}}}",
               ]
 
               cell_class = {}
@@ -457,12 +486,6 @@ jobs:
                           f"}}"
                       )
 
-              for part in range(len(SNAKE_SPECS)):
-                  styles.append(
-                      f"@keyframes s{part}{{{snake_keyframes(part)}}}"
-                      f".s.s{part}{{animation-name:s{part}}}"
-                  )
-
               out = [
                   (
                       f'<svg viewBox="0 0 {WIDTH} {HEIGHT}" '
@@ -473,10 +496,10 @@ jobs:
                       f'from {START_YEAR} to {END_YEAR}">'
                   ),
                   (
-                      f"<title>{html.escape(USER)} GitHub contribution snake, "
+                      f"<title>{html.escape(USER)} GitHub contribution animation, "
                       f"{START_YEAR}-{END_YEAR}</title>"
                   ),
-                  "<desc>Full-history contribution snake styled after Platane/snk</desc>",
+                  "<desc>Full-history contribution grid with a chomping bunny</desc>",
                   "<style>",
                   "".join(styles),
                   (
@@ -504,16 +527,45 @@ jobs:
                           f'rx="2" ry="2"/>'
                       )
 
-              for part, (offset, size, radius) in enumerate(SNAKE_SPECS):
-                  initial_x, initial_y = route[(-part) % len(route)]
-                  out.append(
-                      f'<rect class="s s{part}" '
-                      f'x="{offset}" y="{offset}" '
-                      f'width="{size}" height="{size}" '
-                      f'rx="{radius}" ry="{radius}" '
-                      f'style="transform:translate('
-                      f'{initial_x}px,{initial_y}px)"/>'
-                  )
+              start_angle = direction_angle(0)
+              start_cx = route[0][0] + PITCH / 2
+              start_cy = route[0][1] + PITCH / 2
+
+              out.extend(
+                  [
+                      (
+                          f'<g class="bunny" style="transform:translate('
+                          f'{start_cx:.1f}px,{start_cy:.1f}px) '
+                          f'rotate({start_angle}deg)">'
+                      ),
+                      # Two long bunny ears.
+                      '<ellipse cx="-4.2" cy="-11.5" rx="3.0" ry="7.2" '
+                      'fill="var(--cs)" transform="rotate(-11 -4.2 -11.5)"/>',
+                      '<ellipse cx="2.0" cy="-11.8" rx="3.0" ry="7.2" '
+                      'fill="var(--cs)" transform="rotate(10 2 -11.8)"/>',
+                      '<ellipse cx="-4.2" cy="-11.5" rx="1.25" ry="4.7" '
+                      'fill="var(--ear)" transform="rotate(-11 -4.2 -11.5)"/>',
+                      '<ellipse cx="2.0" cy="-11.8" rx="1.25" ry="4.7" '
+                      'fill="var(--ear)" transform="rotate(10 2 -11.8)"/>',
+                      # Round Pac-Man-like rabbit face.
+                      '<circle cx="0" cy="0" r="8.4" fill="var(--cs)"/>',
+                      # Cute eye and pupil.
+                      '<ellipse cx="2.1" cy="-3.0" rx="2.0" ry="2.3" '
+                      'fill="var(--eye)"/>',
+                      '<circle cx="2.8" cy="-3.0" r="0.85" fill="var(--pupil)"/>',
+                      # Blush cheek.
+                      '<ellipse cx="1.5" cy="3.6" rx="1.8" ry="1.1" '
+                      'fill="var(--cheek)" opacity="0.9"/>',
+                      # Animated Pac-Man mouth: the background-coloured wedge
+                      # opens and closes while contribution squares disappear.
+                      '<path class="mouth" d="M 1 0 L 9 -5.2 L 9 5.2 Z" '
+                      'fill="var(--ce)"/>',
+                      # Tiny rabbit tooth at the mouth edge.
+                      '<rect x="5.7" y="-1.1" width="2.1" height="1.7" '
+                      'rx="0.35" fill="var(--eye)"/>',
+                      '</g>',
+                  ]
+              )
 
               out.append("</svg>")
               return "".join(out)
@@ -521,6 +573,7 @@ jobs:
 
           Path("dist").mkdir(exist_ok=True)
 
+          # Keep the filenames already used by README.md unchanged.
           Path("dist/github-contribution-grid-snake.svg").write_text(
               render("light"),
               encoding="utf-8",
@@ -532,7 +585,7 @@ jobs:
 
           active_total = sum(len(v) for v in active_by_year.values())
           print(
-              f"Generated original-style 4-part snake for "
+              f"Generated chomping bunny for "
               f"{START_YEAR}-{END_YEAR}: "
               f"{active_total} contribution cells covered, "
               f"{total_steps} adjacent movement steps, "

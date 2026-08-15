@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <i>For now, learning how to teach a robot to act safely in the kitchen :)</i>
+  <i>For now, learning how to teach agents to understand their world — and act safely within it :)</i>
 </p>
 
 <div align="center">

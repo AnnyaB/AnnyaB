@@ -110,9 +110,6 @@ jobs:
                   if date.startswith(f"{year}-")
               ]
 
-              # GitHub has used more than one contribution-grid markup over time.
-              # Fallback patterns keep this workflow resilient if the exact element
-              # type changes while data-date/data-level remain present.
               if not days:
                   for tag in re.findall(r"<[^>]+data-date=[\"'][^\"']+[\"'][^>]*>", page):
                       date_match = re.search(
@@ -210,7 +207,11 @@ jobs:
           MAX_WEEKS = 54
           WIDTH = LEFT + MAX_WEEKS * PITCH + 16
           HEIGHT = TOP + len(years) * ROW_HEIGHT + 8
-          DURATION = 24.0
+
+          # Keep approximately the same per-cell pace as the original snk
+          # animation instead of forcing three years into one short loop.
+          STEP_SECONDS = 0.10
+          SNAKE_PARTS = 8
 
 
           def github_weekday(date_obj):
@@ -241,7 +242,8 @@ jobs:
                   cells.append(cell)
                   weeks.setdefault(week, []).append(cell)
 
-              # Serpentine route across the exact year grid.
+              # Visit every single calendar cell exactly once in a continuous
+              # serpentine route. Adjacent cells stay one grid-step apart.
               route = []
               for week in sorted(weeks):
                   column = sorted(weeks[week], key=lambda cell: cell["weekday"])
@@ -260,40 +262,61 @@ jobs:
               layouts[year] = (y0, cells)
               route_cells.extend(route)
 
-
           if not route_cells:
               raise RuntimeError("No contribution calendar cells were generated.")
 
-
+          # Every point is the exact centre of one calendar square. The SVG
+          # animation below uses discrete keyframes, so the snake visibly lands
+          # on every cell rather than interpolating rapidly past them.
           points = [
               (cell["x"] + CELL / 2, cell["y"] + CELL / 2)
               for cell in route_cells
           ]
-
-          path_d = "M " + " L ".join(
-              f"{x:.1f},{y:.1f}" for x, y in points
-          )
 
           route_index = {
               cell["date"]: index
               for index, cell in enumerate(route_cells)
           }
 
-          total_route = max(1, len(route_cells) - 1)
+          total_steps = len(points)
+          DURATION = total_steps * STEP_SECONDS
+
+
+          def animation_values(offset):
+              values = []
+              for i in range(total_steps):
+                  source = max(0, i - offset)
+                  x, y = points[source]
+                  values.append(f"{x:.1f} {y:.1f}")
+              # Close the animation cleanly at the end of the loop.
+              values.append(values[-1])
+              return ";".join(values)
+
+
+          def animation_key_times():
+              # One keyframe per cell, giving equal time to every grid square.
+              if total_steps <= 1:
+                  return "0;1"
+              return ";".join(
+                  f"{i / total_steps:.7f}"
+                  for i in range(total_steps + 1)
+              )
+
+
+          KEY_TIMES = animation_key_times()
 
 
           def render(theme):
               if theme == "dark":
                   dot_colors = [
                       "#161b22",
-                      "#0e4429",
-                      "#006d32",
-                      "#26a641",
-                      "#39d353",
+                      "#01311f",
+                      "#034525",
+                      "#0f6d31",
+                      "#00c647",
                   ]
                   text_color = "#8b949e"
-                  snake_color = "#a371f7"
-                  eye_color = "#0d1117"
+                  snake_color = "purple"
               else:
                   dot_colors = [
                       "#ebedf0",
@@ -303,13 +326,11 @@ jobs:
                       "#216e39",
                   ]
                   text_color = "#57606a"
-                  snake_color = "#8250df"
-                  eye_color = "#ffffff"
+                  snake_color = "purple"
 
               out = [
                   (
                       f'<svg xmlns="http://www.w3.org/2000/svg" '
-                      f'xmlns:xlink="http://www.w3.org/1999/xlink" '
                       f'width="{WIDTH}" height="{HEIGHT}" '
                       f'viewBox="0 0 {WIDTH} {HEIGHT}" '
                       f'role="img" '
@@ -324,6 +345,7 @@ jobs:
                       "<style>"
                       "text{font-family:-apple-system,BlinkMacSystemFont,"
                       "'Segoe UI',sans-serif;font-size:14px;font-weight:600}"
+                      ".snake{shape-rendering:geometricPrecision}"
                       "</style>"
                   ),
               ]
@@ -343,49 +365,45 @@ jobs:
                           f'fill="{color}">'
                       )
 
-                      # Contribution squares disappear briefly when the snake
-                      # reaches them, giving the same "eating" effect.
                       if level > 0:
                           index = route_index[cell["date"]]
-                          eat = 0.025 + 0.91 * (index / total_route)
-                          gone = min(eat + 0.010, 0.95)
+                          eat = index * STEP_SECONDS
+                          # Leave the square eaten long enough to be noticeable,
+                          # then restore it before the next full loop.
                           out.append(
                               f'<animate attributeName="opacity" '
                               f'values="1;1;0;0;1" '
-                              f'keyTimes="0;{eat:.6f};{gone:.6f};0.965;1" '
-                              f'dur="{DURATION}s" repeatCount="indefinite"/>'
+                              f'keyTimes="0;{max(0.0, eat / DURATION - 0.00001):.7f};'
+                              f'{eat / DURATION:.7f};0.9850000;1" '
+                              f'dur="{DURATION:.2f}s" repeatCount="indefinite"/>'
                           )
 
                       out.append("</rect>")
 
-              out.append(
-                  f'<path id="snake-route" d="{path_d}" '
-                  f'fill="none" stroke="none"/>'
-              )
+              # Rounded, tapered pixel body closely matches the friendly look
+              # of Platane/snk: a large rounded head with progressively smaller
+              # rounded body pieces, rather than a chain of identical circles.
+              sizes = [9.2, 8.8, 8.2, 7.5, 6.8, 6.2, 5.7, 5.2]
 
-              # Tail segments.
-              for tail in range(8, 0, -1):
-                  opacity = 0.34 + (8 - tail) * 0.065
+              for part in range(SNAKE_PARTS - 1, -1, -1):
+                  size = sizes[part]
+                  x0 = -size / 2
+                  y0 = -size / 2
+                  radius = min(4.5, size * 0.42)
+                  values = animation_values(part)
+
                   out.append(
-                      f'<circle r="4.1" fill="{snake_color}" '
-                      f'opacity="{opacity:.3f}">'
-                      f'<animateMotion dur="{DURATION}s" '
-                      f'repeatCount="indefinite" '
-                      f'begin="-{tail * 0.034:.3f}s" rotate="auto">'
-                      '<mpath href="#snake-route" xlink:href="#snake-route"/>'
-                      '</animateMotion></circle>'
+                      f'<rect class="snake" x="{x0:.2f}" y="{y0:.2f}" '
+                      f'width="{size:.2f}" height="{size:.2f}" '
+                      f'rx="{radius:.2f}" ry="{radius:.2f}" '
+                      f'fill="{snake_color}">'
+                      f'<animateTransform attributeName="transform" '
+                      f'attributeType="XML" type="translate" '
+                      f'values="{values}" keyTimes="{KEY_TIMES}" '
+                      f'calcMode="discrete" dur="{DURATION:.2f}s" '
+                      f'repeatCount="indefinite"/>'
+                      '</rect>'
                   )
-
-              # Head + eyes.
-              out.append(
-                  f'<g><circle r="5.2" fill="{snake_color}"/>'
-                  f'<circle cx="1.7" cy="-1.7" r="0.85" fill="{eye_color}"/>'
-                  f'<circle cx="1.7" cy="1.7" r="0.85" fill="{eye_color}"/>'
-                  f'<animateMotion dur="{DURATION}s" '
-                  f'repeatCount="indefinite" rotate="auto">'
-                  '<mpath href="#snake-route" xlink:href="#snake-route"/>'
-                  '</animateMotion></g>'
-              )
 
               out.append("</svg>")
               return "".join(out)
@@ -393,8 +411,8 @@ jobs:
 
           Path("dist").mkdir(exist_ok=True)
 
-          # Preserve the filenames already referenced by README.md, so the
-          # README itself does not need to be changed.
+          # Preserve the filenames already referenced by README.md so nothing
+          # outside this workflow needs to change.
           Path("dist/github-contribution-grid-snake.svg").write_text(
               render("light"),
               encoding="utf-8",
@@ -406,7 +424,8 @@ jobs:
 
           print(
               f"Generated full-history contribution snake for "
-              f"{START_YEAR}-{END_YEAR}."
+              f"{START_YEAR}-{END_YEAR}: {total_steps} visited cells, "
+              f"{DURATION:.1f}s per loop ({STEP_SECONDS:.2f}s per cell)."
           )
           PY
 

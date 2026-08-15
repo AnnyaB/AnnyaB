@@ -15,3 +15,7 @@
     <img alt="GitHub contribution grid snake animation" src="https://raw.githubusercontent.com/AnnyaB/AnnyaB/output/github-contribution-grid-snake.svg">
   </picture>
 </div>
+
+<p align="center">
+  <img src="assets/snowball-bunny-carrot.gif" alt="Bunny eating a carrot" width="180"/>
+</p>

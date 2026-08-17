@@ -34,7 +34,7 @@ jobs:
 
           USER = os.environ.get("GH_USER", "AnnyaB")
           START_YEAR = int(os.environ.get("START_YEAR", "2024"))
-          END_YEAR = int(os.environ.get("END_YEAR", "2026"))
+          END_YEAR = dt.date.today().year
           TODAY = dt.date.today()
 
           class ContributionParser(HTMLParser):

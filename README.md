@@ -17,5 +17,5 @@
 </div>
 
 <p align="center">
-  <img src="assets/humanoid_mopping_floor.gif" alt="Humanoid robot mopping the floor" width="200"/>
+  <img src="assets/humanoid_mopping_floor.gif" alt="Humanoid robot mopping the floor" width="400"/>
 </p>

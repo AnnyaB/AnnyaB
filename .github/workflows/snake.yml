@@ -22,10 +22,14 @@ jobs:
           GH_USER: AnnyaB
           START_YEAR: "2024"
           END_YEAR: "2026"
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           python - <<'PY'
           import datetime as dt
           import html
+          import json
+          import time
+          import urllib.error
           import os
           import re
           import urllib.request
@@ -73,6 +77,89 @@ jobs:
                   }
 
 
+          def fetch_graphql_calendar(year, start, end):
+              """Fallback to GitHub's authenticated public contribution calendar."""
+              token = os.environ.get("GITHUB_TOKEN", "")
+              if not token:
+                  raise RuntimeError("GITHUB_TOKEN unavailable for GraphQL fallback.")
+              query = """
+              query($login: String!, $from: DateTime!, $to: DateTime!) {
+                user(login: $login) {
+                  contributionsCollection(from: $from, to: $to) {
+                    contributionCalendar {
+                      weeks {
+                        contributionDays {
+                          date
+                          contributionCount
+                          contributionLevel
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+              """
+              variables = {
+                  "login": USER,
+                  "from": f"{start.isoformat()}T00:00:00Z",
+                  "to": f"{end.isoformat()}T23:59:59Z",
+              }
+              request = urllib.request.Request(
+                  "https://api.github.com/graphql",
+                  data=json.dumps({"query": query, "variables": variables}).encode("utf-8"),
+                  headers={
+                      "Authorization": f"Bearer {token}",
+                      "Accept": "application/vnd.github+json",
+                      "Content-Type": "application/json",
+                      "User-Agent": "AnnyaB-full-history-contribution-snake",
+                  },
+                  method="POST",
+              )
+              with urllib.request.urlopen(request, timeout=40) as response:
+                  payload = json.load(response)
+
+              if payload.get("errors"):
+                  raise RuntimeError(f"GitHub GraphQL errors: {payload['errors']}")
+              try:
+                  weeks = (
+                      payload["data"]["user"]["contributionsCollection"]
+                      ["contributionCalendar"]["weeks"]
+                  )
+              except (KeyError, TypeError) as exc:
+                  raise RuntimeError("GitHub GraphQL returned no contribution calendar.") from exc
+
+              levels = {
+                  "NONE": 0,
+                  "FIRST_QUARTILE": 1,
+                  "SECOND_QUARTILE": 2,
+                  "THIRD_QUARTILE": 3,
+                  "FOURTH_QUARTILE": 4,
+              }
+              by_date = {}
+              for week in weeks:
+                  for day in week["contributionDays"]:
+                      date = day["date"]
+                      if not (start.isoformat() <= date <= end.isoformat()):
+                          continue
+                      level = day["contributionLevel"]
+                      if level not in levels:
+                          raise RuntimeError(f"Unexpected contribution level {level!r}.")
+                      by_date[date] = {
+                          "date": date,
+                          "level": levels[level],
+                          "count": int(day["contributionCount"]),
+                      }
+
+              expected = (end - start).days + 1
+              if len(by_date) != expected:
+                  raise RuntimeError(
+                      f"GraphQL calendar for {year} has {len(by_date)} of {expected} "
+                      "days; refusing to silently invent contribution history."
+                  )
+              print(f"{year}: recovered {expected} calendar days via GitHub GraphQL.")
+              return [by_date[date] for date in sorted(by_date)]
+
+
           def fetch_public_profile_year(year):
               start = dt.date(year, 1, 1)
               end = dt.date(year, 12, 31)
@@ -98,8 +185,17 @@ jobs:
                   },
               )
 
-              with urllib.request.urlopen(request, timeout=30) as response:
-                  page = response.read().decode("utf-8", "replace")
+              for attempt in range(1, 5):
+                  try:
+                      with urllib.request.urlopen(request, timeout=30) as response:
+                          page = response.read().decode("utf-8", "replace")
+                      break
+                  except (urllib.error.URLError, TimeoutError) as exc:
+                      print(f"{year}: request {attempt}/4 failed: {exc}")
+                      if attempt == 4:
+                          print(f"{year}: trying authenticated GraphQL fallback.")
+                          return fetch_graphql_calendar(year, start, end)
+                      time.sleep(min(2 ** attempt, 20))
 
               parser = ContributionParser()
               parser.feed(page)
@@ -149,10 +245,11 @@ jobs:
               )
 
               if len(days) < min(expected_min, 300):
-                  raise RuntimeError(
-                      f"Only parsed {len(days)} contribution days for {year}; "
-                      "GitHub contribution markup may have changed."
+                  print(
+                      f"{year}: public HTML only contained {len(days)} days; "
+                      "trying authenticated GraphQL instead of inventing data."
                   )
+                  return fetch_graphql_calendar(year, start, end)
 
               return sorted(days, key=lambda item: item["date"])
 
